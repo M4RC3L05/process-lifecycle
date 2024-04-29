@@ -259,6 +259,70 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls[9].args, [{}]);
   });
 
+  it("should trigger a shutdown if the global boot timeout is reached", async () => {
+    const fakeTimer = new FakeTime(0);
+    const bootSpy = spy(() => 1);
+    const bootSpy2 = spy(() =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 20_000);
+      })
+    );
+    const shutdownSpy = spy();
+    const eventSpy = spy();
+
+    const pc = new ProcessLifecycle({ bootTimeout: 5000 });
+
+    pc.registerService({ name: "foo", boot: bootSpy, shutdown: shutdownSpy });
+    pc.registerService({
+      name: "bar",
+      boot: bootSpy2,
+      shutdown: shutdownSpy,
+      timeout: 6000,
+    });
+
+    pc.on("bootStarted", eventSpy);
+    pc.on("bootServiceStarted", eventSpy);
+    pc.on("bootServiceEnded", eventSpy);
+    pc.on("bootEnded", eventSpy);
+    pc.on("shutdownStarted", eventSpy);
+    pc.on("shutdownServiceStarted", eventSpy);
+    pc.on("shutdownServiceEnded", eventSpy);
+    pc.on("shutdownEnded", eventSpy);
+
+    assertEquals(pc.booted, false);
+    assertEquals(pc.signal.aborted, false);
+
+    const bootP = pc.boot();
+
+    await fakeTimer.tickAsync(5500);
+    await bootP;
+
+    assertEquals(pc.booted, false);
+    assertEquals(pc.signal.aborted, true);
+
+    assertEquals(bootSpy.calls.length, 1);
+    assertEquals(bootSpy.calls[0].args, [pc]);
+    assertEquals(bootSpy2.calls.length, 1);
+    assertEquals(shutdownSpy.calls.length, 1);
+    assertEquals(shutdownSpy.calls[0].args, [1]);
+    assertEquals(eventSpy.calls.length, 10);
+    assertEquals(eventSpy.calls[0].args, []);
+    assertEquals(eventSpy.calls[1].args, [{ name: "foo" }]);
+    assertEquals(eventSpy.calls[2].args, [{ name: "foo" }]);
+    assertEquals(eventSpy.calls[3].args, [{ name: "bar" }]);
+    assertEquals([{
+      name: eventSpy.calls[4].args[0].name,
+      error: eventSpy.calls[4].args[0].error.message,
+    }], [{ name: "bar", error: "Global timeout exceeded" }]);
+    assertEquals([{ error: eventSpy.calls[5].args[0].error.message }], [{
+      error: "Global timeout exceeded",
+    }]);
+    assertEquals(eventSpy.calls[6].args, []);
+    assertEquals(eventSpy.calls[7].args, [{ name: "foo" }]);
+    assertEquals(eventSpy.calls[8].args, [{ name: "foo" }]);
+    assertEquals(eventSpy.calls[9].args, [{}]);
+  });
+
   it("should shutdown the services in the reverse order they where registered", async () => {
     const error = new Error("foo");
     const bootSpy = spy(() => 1);
@@ -328,5 +392,87 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls[9].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[10].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[11].args, [{}]);
+  });
+
+  it("should stop shutting down if the global shutdown timeout is reached", async () => {
+    const fakeTimer = new FakeTime(0);
+    const bootSpy = spy(() => 1);
+    const bootSpy2 = spy(() => 2);
+    const shutdownSpy = spy();
+    const shutdownSpy2 = spy(() =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 20_000);
+      })
+    );
+    const eventSpy = spy();
+
+    const pc = new ProcessLifecycle({ shutdownTimeout: 5000 });
+
+    pc.registerService({ name: "foo", boot: bootSpy, shutdown: shutdownSpy });
+    pc.registerService({
+      name: "bar",
+      boot: bootSpy2,
+      shutdown: shutdownSpy2,
+      timeout: 6000,
+    });
+
+    pc.on("bootStarted", eventSpy);
+    pc.on("bootServiceStarted", eventSpy);
+    pc.on("bootServiceEnded", eventSpy);
+    pc.on("bootEnded", eventSpy);
+    pc.on("shutdownStarted", eventSpy);
+    pc.on("shutdownServiceStarted", eventSpy);
+    pc.on("shutdownServiceEnded", eventSpy);
+    pc.on("shutdownEnded", eventSpy);
+
+    assertEquals(pc.booted, false);
+    assertEquals(pc.signal.aborted, false);
+
+    await pc.boot();
+
+    assertEquals(pc.booted, true);
+    assertEquals(pc.signal.aborted, false);
+
+    assertEquals(bootSpy.calls.length, 1);
+    assertEquals(bootSpy.calls[0].args, [pc]);
+    assertEquals(bootSpy2.calls.length, 1);
+    assertEquals(bootSpy2.calls[0].args, [pc]);
+    assertEquals(shutdownSpy.calls.length, 0);
+    assertEquals(shutdownSpy2.calls.length, 0);
+    assertEquals(eventSpy.calls.length, 6);
+    assertEquals(eventSpy.calls[0].args, []);
+    assertEquals(eventSpy.calls[1].args, [{ name: "foo" }]);
+    assertEquals(eventSpy.calls[2].args, [{ name: "foo" }]);
+    assertEquals(eventSpy.calls[3].args, [{ name: "bar" }]);
+    assertEquals(eventSpy.calls[4].args, [{ name: "bar" }]);
+    assertEquals(eventSpy.calls[5].args, [{}]);
+
+    assertEquals(pc.booted, true);
+    assertEquals(pc.signal.aborted, false);
+
+    const shutdownP = pc.shutdown();
+    await fakeTimer.tickAsync(5500);
+    await shutdownP;
+
+    assertEquals(pc.booted, true);
+    assertEquals(pc.signal.aborted, true);
+
+    assertEquals(bootSpy.calls.length, 1);
+    assertEquals(bootSpy.calls[0].args, [pc]);
+    assertEquals(bootSpy2.calls.length, 1);
+    assertEquals(bootSpy2.calls[0].args, [pc]);
+    assertEquals(shutdownSpy.calls.length, 0);
+    assertEquals(shutdownSpy2.calls.length, 1);
+    assertEquals(shutdownSpy2.calls[0].args, [2]);
+    assertEquals(eventSpy.calls.length, 10);
+    assertEquals(eventSpy.calls[6].args, []);
+    assertEquals(eventSpy.calls[7].args, [{ name: "bar" }]);
+    assertEquals([{
+      name: eventSpy.calls[8].args[0].name,
+      error: eventSpy.calls[8].args[0].error.message,
+    }], [{ name: "bar", error: "Global timeout exceeded" }]);
+    assertEquals([{
+      error: eventSpy.calls[9].args[0].error.message,
+    }], [{ error: "Global timeout exceeded" }]);
   });
 });
