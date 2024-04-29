@@ -1,6 +1,6 @@
 {
   "name": "@m4rc3l05/process-lifecycle",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "exports": "./src/mod.ts",
   "tasks": {
     "deps:lock": "deno cache --lock=deno.lock --lock-write src/*.ts",
