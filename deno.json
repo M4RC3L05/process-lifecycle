@@ -1,0 +1,21 @@
+{
+  "name": "@m4rc3l05/process-lifecycle",
+  "version": "0.0.0",
+  "exports": "./src/mod.ts",
+  "tasks": {
+    "deps:lock": "deno cache --lock=deno.lock --lock-write src/*.ts",
+    "deps": "deno cache --reload --lock=deno.lock src/*.ts"
+  },
+  "publish": {
+    "include": [
+      "./src/*.ts",
+      "LICENSE",
+      "README.md",
+      "deno.json"
+    ],
+    "exclude": [
+      "./src/*_test.ts",
+      "./src/test_deps.ts"
+    ]
+  }
+}
