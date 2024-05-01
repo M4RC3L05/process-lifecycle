@@ -71,8 +71,6 @@ const timeout = (
       clearTimeout(i);
       resolve();
     });
-
-    Deno.unrefTimer(i);
   });
 
 export class ProcessLifecycle {
@@ -153,6 +151,7 @@ export class ProcessLifecycle {
   }
 
   async #executeLifecycle(mode: "boot" | "shutdown"): Promise<void> {
+    const errors = new Set<Error>();
     const timeouts: (() => void)[] = [];
     const serviceRegistrations = mode === "shutdown"
       ? this.#serviceRegistrations.toReversed()
@@ -190,7 +189,7 @@ export class ProcessLifecycle {
           ]);
 
           if (response === "timeout") {
-            throw new Error("Service boot timeout exceeded");
+            throw new Error(`Service ${mode} timeout exceeded`);
           }
 
           if (response === "global-timeout") {
@@ -213,23 +212,43 @@ export class ProcessLifecycle {
             error,
           });
 
+          errors.add(error);
+
           if (mode === "boot" || error instanceof GlobalTimeoutExceededError) {
             throw error;
           }
         }
       }
 
-      // Cancel all timeouts queued.
-      timeouts.forEach((fn) => fn());
-
       this.#booted = mode === "boot";
 
-      this.#getHandler(`${mode}Ended`)?.({});
-    } catch (error) {
+      const payload: { error?: Error } = {};
+
+      if (errors.size > 0) {
+        payload.error = new AggregateError(
+          errors,
+          `"${mode}" terminated with errors`,
+        );
+      }
+
+      this.#getHandler(`${mode}Ended`)?.(payload);
+
       // Cancel all timeouts queued.
       timeouts.forEach((fn) => fn());
+      errors.clear();
+    } catch (error) {
+      errors.add(error);
 
-      this.#getHandler(`${mode}Ended`)?.({ error });
+      this.#getHandler(`${mode}Ended`)?.({
+        error: new AggregateError(
+          errors,
+          `"${mode}" terminated with errors`,
+        ),
+      });
+
+      // Cancel all timeouts queued.
+      timeouts.forEach((fn) => fn());
+      errors.clear();
 
       if (mode === "boot") {
         return this.#executeLifecycle("shutdown");
