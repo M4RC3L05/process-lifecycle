@@ -1,6 +1,6 @@
 {
   "name": "@m4rc3l05/process-lifecycle",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "exports": "./src/mod.ts",
   "tasks": {
     "dev:boot": "git config core.hooksPath ./.bin/git-hooks/ && deno task deps",
