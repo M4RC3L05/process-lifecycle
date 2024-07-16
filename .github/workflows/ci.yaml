@@ -1,3 +1,4 @@
+---
 name: CI
 
 on: [push, pull_request]
@@ -9,16 +10,24 @@ jobs:
       - name: clone repository
         uses: actions/checkout@v4
 
-      - name: install deno
-        uses: denoland/setup-deno@v1
+      - name: setup tools
+        uses: jdx/mise-action@v2
         with:
-          deno-version: 1.X
+          install: true
+          cache: true
+
+      - name: check lockfile
+        run: deno task deps:check
+
+      - name: check lint
+        run: |
+          deno lint
+          yamllint .
 
       - name: check format
-        run: deno fmt --check
-
-      - name: check linting
-        run: deno lint
+        run: |-
+          deno fmt --check
+          yamlfmt -dry -lint .
 
       - name: run tests
-        run: deno test
+        run: deno test --allow-read
