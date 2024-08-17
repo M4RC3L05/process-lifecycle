@@ -25,3 +25,6 @@ jobs:
 
       - name: check linting
         run: devbox run check:lint
+
+      - name: run tests
+        run: devbox run -- deno test --allow-read
