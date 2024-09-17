@@ -206,6 +206,34 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls[9].args, [{}]);
   });
 
+  it("should not allow to retrigger shutdown if any of the services fails to boot", async () => {
+    const shutdownSpy = spy();
+
+    const pc = new ProcessLifecycle();
+
+    pc.registerService({ name: "foo", boot: () => 1, shutdown: shutdownSpy });
+    pc.registerService({
+      name: "bar",
+      boot: () => {
+        throw new Error("foo");
+      },
+      shutdown: shutdownSpy,
+    });
+
+    assertEquals(pc.booted, false);
+    assertEquals(pc.signal.aborted, false);
+
+    await pc.boot();
+    await pc.shutdown();
+    await pc.shutdown();
+
+    assertEquals(pc.booted, false);
+    assertEquals(pc.signal.aborted, true);
+
+    assertEquals(shutdownSpy.calls.length, 1);
+    assertEquals(shutdownSpy.calls[0].args, [1]);
+  });
+
   it("should trigger a shutdown if any of the services timesout to boot", async () => {
     const fakeTimer = new FakeTime(0);
     const bootSpy = spy(() => 1);

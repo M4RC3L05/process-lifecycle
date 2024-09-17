@@ -251,7 +251,7 @@ export class ProcessLifecycle {
       errors.clear();
 
       if (mode === "boot") {
-        return this.#executeLifecycle("shutdown");
+        return this.shutdown();
       }
     }
   }
