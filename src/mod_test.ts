@@ -235,7 +235,7 @@ describe("ProcessLifecycle", () => {
   });
 
   it("should trigger a shutdown if any of the services timesout to boot", async () => {
-    const fakeTimer = new FakeTime(0);
+    using fakeTimer = new FakeTime(0);
     const bootSpy = spy(() => 1);
     const bootSpy2 = spy(() =>
       new Promise<void>((resolve) => {
@@ -306,7 +306,7 @@ describe("ProcessLifecycle", () => {
   });
 
   it("should trigger a shutdown if the global boot timeout is reached", async () => {
-    const fakeTimer = new FakeTime(0);
+    using fakeTimer = new FakeTime(0);
     const bootSpy = spy(() => 1);
     const bootSpy2 = spy(() =>
       new Promise<void>((resolve) => {
@@ -455,7 +455,7 @@ describe("ProcessLifecycle", () => {
   });
 
   it("should shutdown the services if some of them timesout", async () => {
-    const fakeTimer = new FakeTime(0);
+    using fakeTimer = new FakeTime(0);
     const bootSpy = spy(() => 1);
     const bootSpy2 = spy(() => 2);
     const shutdownSpy = spy();
@@ -545,7 +545,7 @@ describe("ProcessLifecycle", () => {
   });
 
   it("should stop shutting down if the global shutdown timeout is reached", async () => {
-    const fakeTimer = new FakeTime(0);
+    using fakeTimer = new FakeTime(0);
     const bootSpy = spy(() => 1);
     const bootSpy2 = spy(() => 2);
     const shutdownSpy = spy();
