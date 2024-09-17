@@ -1,0 +1,29 @@
+[settings]
+experimental = true
+
+[tools]
+deno = "1.46.3"
+yamllint = "1.35.1"
+yamlfmt = "0.13.0"
+
+[tasks."check:format"]
+run = """
+#!/usr/bin/env sh
+
+set -ex
+
+deno fmt --check
+yamlfmt -dry -lint $(find . -type f | grep -E "\\.yaml$|\\.yml$")
+"""
+
+[tasks."check:lint"]
+run = """
+#!/usr/bin/env sh
+
+set -ex
+
+deno lint
+deno check --no-lock $(find . -type f | grep -E "\\.ts$|\\.tsx$")
+deno run -A --no-lock npm:markdownlint-cli2 "**/*.{md,markdown}" "#node_modules"
+yamllint $(find . -type f | grep -E "\\.yaml$|\\.yml$")
+"""
