@@ -3,8 +3,8 @@
   "version": "0.1.1",
   "exports": "./src/mod.ts",
   "tasks": {
-    "deps:lock": "deno cache --frozen=false --node-modules-dir **/*.ts",
-    "deps": "deno cache --reload --frozen --node-modules-dir **/*.ts"
+    "deps:lock": "deno cache --frozen=false **/*.ts",
+    "deps": "deno cache --reload --frozen **/*.ts"
   },
   "publish": {
     "include": [
