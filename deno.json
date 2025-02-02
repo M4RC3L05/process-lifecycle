@@ -3,8 +3,29 @@
   "version": "0.1.1",
   "exports": "./src/mod.ts",
   "tasks": {
-    "deps:lock": "deno cache --frozen=false **/*.ts",
-    "deps": "deno cache --reload --frozen **/*.ts"
+    "test": {
+      "description": "Run tests",
+      "command": "deno test --no-check --trace-leaks --parallel"
+    },
+    "check:fmt": {
+      "description": "Run formatting checks",
+      "command": "deno fmt --check"
+    },
+    "check:lint": {
+      "description": "Run lint checks",
+      "command": "deno lint"
+    },
+    "check:check": {
+      "description": "Run check checks",
+      "command": "deno check ."
+    },
+    "checks": {
+      "description": "Run code checks",
+      "dependencies": ["check:fmt", "check:lint", "check:check"]
+    }
+  },
+  "lock": {
+    "frozen": true
   },
   "publish": {
     "include": [
@@ -18,5 +39,9 @@
       "./src/*_test.ts",
       "./src/test_deps.ts"
     ]
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1.0.11",
+    "@std/testing": "jsr:@std/testing@1.0.9"
   }
 }

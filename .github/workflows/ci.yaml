@@ -19,13 +19,10 @@ jobs:
           cache: true
 
       - name: install deps
-        run: deno task deps
+        run: deno install
 
-      - name: check format
-        run: mise run check:format
-
-      - name: check linting
-        run: mise run check:lint
+      - name: run code checks
+        run: deno task checks
 
       - name: run tests
-        run: deno test
+        run: deno task test

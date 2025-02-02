@@ -1,11 +1,7 @@
-import {
-  assertEquals,
-  assertInstanceOf,
-  describe,
-  FakeTime,
-  it,
-  spy,
-} from "./deps_test.ts";
+import { assertEquals, assertInstanceOf } from "@std/assert";
+import { describe, it } from "@std/testing/bdd";
+import { spy } from "@std/testing/mock";
+import { FakeTime } from "@std/testing/time";
 import { ProcessLifecycle } from "./mod.ts";
 
 describe("ProcessLifecycle", () => {

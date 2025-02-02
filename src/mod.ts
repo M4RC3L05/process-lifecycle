@@ -212,7 +212,7 @@ export class ProcessLifecycle {
             error,
           });
 
-          errors.add(error);
+          errors.add(error as Error);
 
           if (mode === "boot" || error instanceof GlobalTimeoutExceededError) {
             throw error;
@@ -237,7 +237,7 @@ export class ProcessLifecycle {
       timeouts.forEach((fn) => fn());
       errors.clear();
     } catch (error) {
-      errors.add(error);
+      errors.add(error as Error);
 
       this.#getHandler(`${mode}Ended`)?.({
         error: new AggregateError(
