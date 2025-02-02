@@ -32,8 +32,7 @@
       "./src/*.ts",
       "LICENSE",
       "README.md",
-      "deno.json",
-      "deno.lock"
+      "deno.json"
     ],
     "exclude": [
       "./src/*_test.ts",

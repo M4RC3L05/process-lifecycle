@@ -13,28 +13,71 @@ type ServiceRegistration<BR = any> = {
   timeout?: number;
 };
 
-const wrapInPromise = (
+const wrapExecutor = (
   // deno-lint-ignore no-explicit-any
   fn: ((...args: any[]) => Promise<void>) | ((...args: any[]) => void),
 ) => {
   // deno-lint-ignore no-explicit-any
-  return (...args: any[]) =>
-    new Promise((resolve, reject) => {
-      try {
-        const result = fn(...args);
+  return async (...args: any[]) => {
+    const result = fn(...args);
 
-        if (result instanceof Promise) {
-          result.then(resolve).catch(reject);
-        } else {
-          resolve(result);
-        }
-      } catch (error) {
-        reject(error);
-      }
-    });
+    if (result instanceof Promise) {
+      return await result;
+    }
+
+    return result;
+  };
 };
 
-export class GlobalTimeoutExceededError extends Error {}
+const wrapIgnoreErrorsExecuter = (
+  // deno-lint-ignore no-explicit-any
+  fn: ((...args: any[]) => Promise<void>) | ((...args: any[]) => void),
+) => {
+  const wrapped = wrapExecutor(fn);
+
+  // deno-lint-ignore no-explicit-any
+  return async (...args: any[]) => {
+    try {
+      await wrapped(...args);
+    } catch {
+      //
+    }
+  };
+};
+
+export class GlobalTimeoutExceededError extends Error {
+  constructor(timeout: number) {
+    super("Global timeout exceeded", { cause: { timeout } });
+  }
+}
+
+export class ServiceTimeoutExceededError extends Error {
+  constructor(serviceName: string, mode: "boot" | "shutdown", timeout: number) {
+    super(`Service "${serviceName}" ${mode} timeout exceeded`, {
+      cause: { timeout },
+    });
+  }
+}
+
+export class ServiceLifecycleError extends Error {
+  constructor(serviceName: string, mode: "boot" | "shutdown", cause?: unknown) {
+    super(`Service "${serviceName}" ${mode} error`, {
+      cause,
+    });
+  }
+}
+
+export class ProcessLifecicleAggregateError extends AggregateError {
+  constructor(mode: "boot" | "shutdown", errors: Iterable<unknown>) {
+    super(errors, `Process lifecycle "${mode}" terminated with errors`);
+  }
+}
+
+class DisposableSet<T> extends Set<T> {
+  [Symbol.dispose]() {
+    this.clear();
+  }
+}
 
 type ProcessLifecycleEvents = {
   bootStarted: () => void;
@@ -60,18 +103,22 @@ type ProcessLifecycleEventsKeys = keyof ProcessLifecycleEvents;
 const bootProcessSymbol = Symbol("bootProcessSymbol");
 const shutdownProcessSymbol = Symbol("shutdownProcessSymbol");
 
-const timeout = (
+const timeout = <T>(
   ms: number,
-  fn: (x: () => void) => void,
-) =>
-  new Promise<void>((resolve) => {
-    const i = setTimeout(resolve, ms);
+  resolveWith: T,
+) => {
+  const { promise, resolve } = Promise.withResolvers();
 
-    fn(() => {
-      clearTimeout(i);
-      resolve();
-    });
-  });
+  const timeoutId = setTimeout(() => resolve(resolveWith), ms);
+
+  return {
+    promise,
+    [Symbol.dispose]: () => {
+      clearTimeout(timeoutId);
+      resolve(resolveWith);
+    },
+  };
+};
 
 export class ProcessLifecycle {
   #abortController = new AbortController();
@@ -108,7 +155,7 @@ export class ProcessLifecycle {
     event: KE,
     fn: ProcessLifecycleEvents[KE],
   ) {
-    this.#eventsHandlers.set(event, fn);
+    this.#eventsHandlers.set(event, wrapIgnoreErrorsExecuter(fn));
   }
 
   getService<R>(name: string): R {
@@ -120,15 +167,19 @@ export class ProcessLifecycle {
 
     this.#serviceRegistrationsStaged.push({
       ...serviceRegistration,
-      boot: wrapInPromise(serviceRegistration.boot),
-      shutdown: wrapInPromise(serviceRegistration.shutdown),
+      boot: wrapExecutor(serviceRegistration.boot),
+      shutdown: wrapExecutor(serviceRegistration.shutdown),
       timeout: serviceRegistration.timeout ?? 5_000,
     });
   }
 
   boot = (): Promise<void> => {
     if (!this[bootProcessSymbol]) {
-      this[bootProcessSymbol] = this.#executeLifecycle("boot");
+      this[bootProcessSymbol] = this.#executeLifecycle(
+        "boot",
+        [...this.#serviceRegistrationsStaged],
+        this.#options.bootTimeout,
+      );
     }
 
     return this[bootProcessSymbol];
@@ -136,7 +187,11 @@ export class ProcessLifecycle {
 
   shutdown = (): Promise<void> => {
     if (!this[shutdownProcessSymbol]) {
-      this[shutdownProcessSymbol] = this.#executeLifecycle("shutdown");
+      this[shutdownProcessSymbol] = this.#executeLifecycle(
+        "shutdown",
+        this.#serviceRegistrations.toReversed(),
+        this.#options.shutdownTimeout,
+      );
     }
 
     return this[shutdownProcessSymbol];
@@ -150,17 +205,16 @@ export class ProcessLifecycle {
       | undefined;
   }
 
-  async #executeLifecycle(mode: "boot" | "shutdown"): Promise<void> {
-    const errors = new Set<Error>();
-    const timeouts: (() => void)[] = [];
-    const serviceRegistrations = mode === "shutdown"
-      ? this.#serviceRegistrations.toReversed()
-      : this.#serviceRegistrationsStaged;
-    const globalDelay = mode === "shutdown"
-      ? this.#options.shutdownTimeout
-      : this.#options.bootTimeout;
-    const globalTimeout = timeout(globalDelay, (x) => timeouts.push(x))
-      .then(() => "global-timeout");
+  async #executeLifecycle(
+    mode: "boot" | "shutdown",
+    serviceRegistrations: Required<ServiceRegistration>[],
+    globalDelay: number,
+  ): Promise<void> {
+    using errors = new DisposableSet<Error>();
+    using globalTimeout = timeout(
+      globalDelay,
+      new GlobalTimeoutExceededError(globalDelay),
+    );
 
     if (mode === "shutdown") {
       this.#abortController.abort();
@@ -174,32 +228,38 @@ export class ProcessLifecycle {
           name: serviceRegistration.name,
         });
 
+        using serviceRegistrationTimeout = timeout(
+          serviceRegistration.timeout,
+          new ServiceTimeoutExceededError(
+            serviceRegistration.name,
+            mode,
+            serviceRegistration.timeout,
+          ),
+        );
+
         try {
+          const executed = mode === "shutdown"
+            ? serviceRegistration.shutdown(
+              this.#services.get(serviceRegistration.name),
+            )
+            : serviceRegistration.boot(this);
+
           const response = await Promise.race([
-            mode === "shutdown"
-              ? serviceRegistration.shutdown(
-                this.#services.get(serviceRegistration.name),
-              )
-              : serviceRegistration.boot(this),
-            timeout(
-              serviceRegistration.timeout,
-              (x) => timeouts.push(x),
-            ).then(() => "timeout"),
-            globalTimeout,
+            executed,
+            serviceRegistrationTimeout.promise,
+            globalTimeout.promise,
           ]);
 
-          if (response === "timeout") {
-            throw new Error(`Service ${mode} timeout exceeded`);
-          }
-
-          if (response === "global-timeout") {
-            throw new GlobalTimeoutExceededError("Global timeout exceeded");
+          if (response instanceof Error) {
+            throw response;
           }
 
           if (mode === "shutdown") {
             this.#services.delete(serviceRegistration.name);
           } else {
+            // Add booted service to the service registrations so we can shut it down on shutdown.
             this.#serviceRegistrations.push(serviceRegistration);
+            // Store result to be available on other service registrations on boot.
             this.#services.set(serviceRegistration.name, response);
           }
 
@@ -207,15 +267,23 @@ export class ProcessLifecycle {
             name: serviceRegistration.name,
           });
         } catch (error) {
+          const mappedError = new ServiceLifecycleError(
+            serviceRegistration.name,
+            mode,
+            error,
+          );
+
           this.#getHandler(`${mode}ServiceEnded`)?.({
             name: serviceRegistration.name,
-            error,
+            error: mappedError,
           });
 
-          errors.add(error as Error);
+          errors.add(mappedError);
 
+          // If the mode is boot we want to abort the services handling
+          // The consumer should force exit in this cases if on shutdown mode.
           if (mode === "boot" || error instanceof GlobalTimeoutExceededError) {
-            throw error;
+            throw mappedError;
           }
         }
       }
@@ -225,34 +293,36 @@ export class ProcessLifecycle {
       const payload: { error?: Error } = {};
 
       if (errors.size > 0) {
-        payload.error = new AggregateError(
-          errors,
-          `"${mode}" terminated with errors`,
-        );
+        payload.error = new ProcessLifecicleAggregateError(mode, errors);
       }
 
       this.#getHandler(`${mode}Ended`)?.(payload);
-
-      // Cancel all timeouts queued.
-      timeouts.forEach((fn) => fn());
-      errors.clear();
     } catch (error) {
+      this.#booted = false;
+
       errors.add(error as Error);
 
       this.#getHandler(`${mode}Ended`)?.({
-        error: new AggregateError(
-          errors,
-          `"${mode}" terminated with errors`,
-        ),
+        error: new ProcessLifecicleAggregateError(mode, errors),
       });
 
-      // Cancel all timeouts queued.
-      timeouts.forEach((fn) => fn());
-      errors.clear();
-
+      // If there was an error while booting we shutdown.
       if (mode === "boot") {
         return this.shutdown();
       }
+    }
+
+    // Remove event handlers after shutdown ended.
+    // It must be contructed a new instace to be able to boot again and register new listeners.
+    if (mode === "shutdown") {
+      this.#eventsHandlers.clear();
+      this.#serviceRegistrationsStaged = [];
+      this.#serviceRegistrations = [];
+      this.#services.clear();
+    }
+
+    if (mode === "boot") {
+      this.#serviceRegistrationsStaged = [];
     }
   }
 }

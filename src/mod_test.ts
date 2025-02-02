@@ -2,7 +2,7 @@ import { assertEquals, assertInstanceOf } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { spy } from "@std/testing/mock";
 import { FakeTime } from "@std/testing/time";
-import { ProcessLifecycle } from "./mod.ts";
+import { ProcessLifecicleAggregateError, ProcessLifecycle } from "./mod.ts";
 
 describe("ProcessLifecycle", () => {
   describe("getService()", () => {
@@ -190,12 +190,27 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls[1].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[2].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[3].args, [{ name: "bar" }]);
-    assertEquals(eventSpy.calls[4].args, [{ name: "bar", error }]);
-    assertInstanceOf(eventSpy.calls[5].args[0].error, AggregateError);
+    assertEquals(eventSpy.calls[4].args.length, 1);
+    assertEquals(eventSpy.calls[4].args[0].name, "bar");
+    assertEquals(
+      eventSpy.calls[4].args[0].error.message,
+      'Service "bar" boot error',
+    );
+    assertEquals(eventSpy.calls[4].args[0].error.cause, error);
+    assertInstanceOf(
+      eventSpy.calls[5].args[0].error,
+      ProcessLifecicleAggregateError,
+    );
     assertEquals([{
       error: eventSpy.calls[5].args[0].error.message,
-      errors: eventSpy.calls[5].args[0].error.errors,
-    }], [{ error: '"boot" terminated with errors', errors: [error] }]);
+      errors: eventSpy.calls[5].args[0].error.errors.map((error: Error) => ({
+        message: error.message,
+        cause: error.cause,
+      })),
+    }], [{
+      error: 'Process lifecycle "boot" terminated with errors',
+      errors: [{ cause: error, message: 'Service "bar" boot error' }],
+    }]);
     assertEquals(eventSpy.calls[6].args, []);
     assertEquals(eventSpy.calls[7].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[8].args, [{ name: "foo" }]);
@@ -281,19 +296,32 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls[1].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[2].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[3].args, [{ name: "bar" }]);
-    assertEquals([{
-      name: eventSpy.calls[4].args[0].name,
-      error: eventSpy.calls[4].args[0].error.message,
-    }], [{ name: "bar", error: "Service boot timeout exceeded" }]);
-    assertInstanceOf(eventSpy.calls[5].args[0].error, AggregateError);
+    assertEquals(eventSpy.calls[4].args.length, 1);
+    assertEquals(eventSpy.calls[4].args[0].name, "bar");
+    assertEquals(
+      eventSpy.calls[4].args[0].error.message,
+      'Service "bar" boot error',
+    );
+    assertEquals(
+      eventSpy.calls[4].args[0].error.cause?.message,
+      'Service "bar" boot timeout exceeded',
+    );
+    assertInstanceOf(
+      eventSpy.calls[5].args[0].error,
+      ProcessLifecicleAggregateError,
+    );
     assertEquals([{
       error: eventSpy.calls[5].args[0].error.message,
-      errors: eventSpy.calls[5].args[0].error.errors.map((error: Error) =>
-        error.message
-      ),
+      errors: eventSpy.calls[5].args[0].error.errors.map((error: Error) => ({
+        message: error.message,
+        cause: (error.cause as Error)?.message,
+      })),
     }], [{
-      error: '"boot" terminated with errors',
-      errors: ["Service boot timeout exceeded"],
+      error: 'Process lifecycle "boot" terminated with errors',
+      errors: [{
+        message: 'Service "bar" boot error',
+        cause: 'Service "bar" boot timeout exceeded',
+      }],
     }]);
     assertEquals(eventSpy.calls[6].args, []);
     assertEquals(eventSpy.calls[7].args, [{ name: "foo" }]);
@@ -352,19 +380,32 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls[1].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[2].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[3].args, [{ name: "bar" }]);
-    assertEquals([{
-      name: eventSpy.calls[4].args[0].name,
-      error: eventSpy.calls[4].args[0].error.message,
-    }], [{ name: "bar", error: "Global timeout exceeded" }]);
-    assertInstanceOf(eventSpy.calls[5].args[0].error, AggregateError);
+    assertEquals(eventSpy.calls[4].args.length, 1);
+    assertEquals(eventSpy.calls[4].args[0].name, "bar");
+    assertEquals(
+      eventSpy.calls[4].args[0].error.message,
+      'Service "bar" boot error',
+    );
+    assertEquals(
+      eventSpy.calls[4].args[0].error.cause?.message,
+      "Global timeout exceeded",
+    );
+    assertInstanceOf(
+      eventSpy.calls[5].args[0].error,
+      ProcessLifecicleAggregateError,
+    );
     assertEquals([{
       error: eventSpy.calls[5].args[0].error.message,
-      errors: eventSpy.calls[5].args[0].error.errors.map((error: Error) =>
-        error.message
-      ),
+      errors: eventSpy.calls[5].args[0].error.errors.map((error: Error) => ({
+        message: error.message,
+        cause: (error.cause as Error)?.message,
+      })),
     }], [{
-      error: '"boot" terminated with errors',
-      errors: ["Global timeout exceeded"],
+      error: 'Process lifecycle "boot" terminated with errors',
+      errors: [{
+        cause: "Global timeout exceeded",
+        message: 'Service "bar" boot error',
+      }],
     }]);
     assertEquals(eventSpy.calls[6].args, []);
     assertEquals(eventSpy.calls[7].args, [{ name: "foo" }]);
@@ -437,16 +478,28 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls.length, 12);
     assertEquals(eventSpy.calls[6].args, []);
     assertEquals(eventSpy.calls[7].args, [{ name: "bar" }]);
-    assertEquals(eventSpy.calls[8].args, [{ name: "bar", error }]);
+    assertEquals(eventSpy.calls[8].args.length, 1);
+    assertEquals(eventSpy.calls[8].args[0].name, "bar");
+    assertEquals(
+      eventSpy.calls[8].args[0].error.message,
+      'Service "bar" shutdown error',
+    );
+    assertEquals(eventSpy.calls[8].args[0].error.cause, error);
     assertEquals(eventSpy.calls[9].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[10].args, [{ name: "foo" }]);
-    assertInstanceOf(eventSpy.calls[11].args[0].error, AggregateError);
+    assertInstanceOf(
+      eventSpy.calls[11].args[0].error,
+      ProcessLifecicleAggregateError,
+    );
     assertEquals([{
       error: eventSpy.calls[11].args[0].error.message,
-      errors: eventSpy.calls[11].args[0].error.errors,
+      errors: eventSpy.calls[11].args[0].error.errors.map((error: Error) => ({
+        message: error.message,
+        cause: error.cause,
+      })),
     }], [{
-      error: '"shutdown" terminated with errors',
-      errors: [error],
+      error: 'Process lifecycle "shutdown" terminated with errors',
+      errors: [{ message: 'Service "bar" shutdown error', cause: error }],
     }]);
   });
 
@@ -522,25 +575,38 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls.length, 12);
     assertEquals(eventSpy.calls[6].args, []);
     assertEquals(eventSpy.calls[7].args, [{ name: "bar" }]);
+    assertEquals(eventSpy.calls[8].args.length, 1);
     assertEquals([{
       name: eventSpy.calls[8].args[0].name,
       error: eventSpy.calls[8].args[0].error.message,
-    }], [{ name: "bar", error: "Service shutdown timeout exceeded" }]);
+      cause: eventSpy.calls[8].args[0].error.cause.message,
+    }], [{
+      name: "bar",
+      error: 'Service "bar" shutdown error',
+      cause: 'Service "bar" shutdown timeout exceeded',
+    }]);
     assertEquals(eventSpy.calls[9].args, [{ name: "foo" }]);
     assertEquals(eventSpy.calls[10].args, [{ name: "foo" }]);
-    assertInstanceOf(eventSpy.calls[11].args[0].error, AggregateError);
+    assertInstanceOf(
+      eventSpy.calls[11].args[0].error,
+      ProcessLifecicleAggregateError,
+    );
     assertEquals([{
       error: eventSpy.calls[11].args[0].error.message,
-      errors: eventSpy.calls[11].args[0].error.errors.map((error: Error) =>
-        error.message
-      ),
+      errors: eventSpy.calls[11].args[0].error.errors.map((error: Error) => ({
+        message: error.message,
+        cause: (error.cause as Error)?.message,
+      })),
     }], [{
-      error: '"shutdown" terminated with errors',
-      errors: ["Service shutdown timeout exceeded"],
+      error: 'Process lifecycle "shutdown" terminated with errors',
+      errors: [{
+        cause: 'Service "bar" shutdown timeout exceeded',
+        message: 'Service "bar" shutdown error',
+      }],
     }]);
   });
 
-  it("should stop shutting down if the global shutdown timeout is reached", async () => {
+  it("should complete shutting down if the global shutdown timeout is reached", async () => {
     using fakeTimer = new FakeTime(0);
     const bootSpy = spy(() => 1);
     const bootSpy2 = spy(() => 2);
@@ -600,7 +666,7 @@ describe("ProcessLifecycle", () => {
     await fakeTimer.tickAsync(5500);
     await shutdownP;
 
-    assertEquals(pc.booted, true);
+    assertEquals(pc.booted, false);
     assertEquals(pc.signal.aborted, true);
 
     assertEquals(bootSpy.calls.length, 1);
@@ -613,19 +679,29 @@ describe("ProcessLifecycle", () => {
     assertEquals(eventSpy.calls.length, 10);
     assertEquals(eventSpy.calls[6].args, []);
     assertEquals(eventSpy.calls[7].args, [{ name: "bar" }]);
+    assertEquals(eventSpy.calls[8].args.length, 1);
     assertEquals([{
       name: eventSpy.calls[8].args[0].name,
       error: eventSpy.calls[8].args[0].error.message,
-    }], [{ name: "bar", error: "Global timeout exceeded" }]);
+      cause: eventSpy.calls[8].args[0].error.cause.message,
+    }], [{
+      name: "bar",
+      error: 'Service "bar" shutdown error',
+      cause: "Global timeout exceeded",
+    }]);
     assertInstanceOf(eventSpy.calls[9].args[0].error, AggregateError);
     assertEquals([{
       error: eventSpy.calls[9].args[0].error.message,
-      errors: eventSpy.calls[9].args[0].error.errors.map((error: Error) =>
-        error.message
-      ),
+      errors: eventSpy.calls[9].args[0].error.errors.map((error: Error) => ({
+        message: error.message,
+        cause: (error.cause as Error)?.message,
+      })),
     }], [{
-      error: '"shutdown" terminated with errors',
-      errors: ["Global timeout exceeded"],
+      error: 'Process lifecycle "shutdown" terminated with errors',
+      errors: [{
+        message: 'Service "bar" shutdown error',
+        cause: "Global timeout exceeded",
+      }],
     }]);
   });
 });
