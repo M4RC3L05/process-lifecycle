@@ -2,9 +2,9 @@
 experimental = true
 
 [tools]
-deno = "1.46.3"
+deno = "2.1.9"
 yamllint = "1.35.1"
-yamlfmt = "0.13.0"
+yamlfmt = "0.15.0"
 
 [tasks."check:format"]
 run = """
